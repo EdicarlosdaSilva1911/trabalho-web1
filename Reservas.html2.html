@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Sistema de Agendamento - Usuários, Segurança e CRUD</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px; }
+        h1, h2 { text-align: center; }
+        .box { width: 480px; margin: 12px auto; background: white; padding: 18px; border-radius: 10px; box-shadow: 0 0 10px #ccc; }
+        .small-box { width: 320px; margin: 12px auto; background: white; padding: 12px; border-radius: 8px; box-shadow: 0 0 8px #ddd; }
+        input, select, textarea { width: 100%; padding: 8px; margin-top: 8px; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; margin-top: 12px; background: #007bff; border: none; color: white; cursor: pointer; border-radius: 6px; }
+        button.ghost { background: #6c757d; }
+        button.danger { background: #dc3545; }
+        table { width: 95%; margin: 14px auto; border-collapse: collapse; }
+        table, th, td { border: 1px solid #bbb; padding: 8px; }
+        th { background: #efefef; }
+        .row { display:flex; gap:12px; justify-content:center; }
+        .flex { display:flex; gap:8px; }
+        .note { font-size:0.9em; color:#555; text-align:center; }
+        .hidden { display:none; }
+        .meter { height:10px; background:#eee; border-radius:6px; overflow:hidden; margin-top:8px; }
+        .meter > i { display:block; height:100%; width:0%; background:linear-gradient(90deg,#ff4d4d,#ffc107,#28a745); }
+        .label { font-weight:bold; }
+        .center { text-align:center; }
+    </style>
+</head>
+<body>
+<h1>Sistema de Agendamento de Salas — Segurança & Gestão</h1>
+
+<!-- LOGIN / NAV -->
+<div class="box" id="screenLogin">
+    <h2>Login</h2>
+    <input id="loginUser" placeholder="Usuário">
+    <input id="loginPass" type="password" placeholder="Senha">
+    <button onclick="handleLogin()">Entrar</button>
+    <div class="row">
+        <button class="ghost" style="width:48%;" onclick="showRegister()">Cadastrar</button>
+        <button class="ghost" style="width:48%;" onclick="showForgot()">Esqueci senha</button>
+    </div>
+    <p id="loginMsg" class="note"></p>
+</div>
+
+<!-- CADASTRO PÚBLICO (cria apenas usuários com role 'user') -->
+<div class="box hidden" id="screenRegister">
+    <h2>Cadastrar Usuário</h2>
+    <input id="regUser" placeholder="Nome de usuário (único)">
+    <input id="regPass" type="password" placeholder="Senha (mín. 8 caracteres)">
+    <input id="regPassConfirm" type="password" placeholder="Confirmar senha">
+    <input id="regRecovery" placeholder="Frase de recuperação (use algo fácil de lembrar)">
+
+    <div>
+        <div class="label">Força da senha</div>
+        <div class="meter"><i id="pwMeter"></i></div>
+        <div id="pwRules" class="note">Regras: mínimo 8, maiúscula, minúscula, número e caractere especial</div>
+    </div>
+
+    <button onclick="handleRegister(false)">Cadastrar (usuário)</button>
+    <button class="ghost" onclick="showLogin()">Voltar</button>
+    <p id="regMsg" class="note"></p>
+</div>
+
+<!-- RESET SENHA (por frase de recuperação) -->
+<div class="box hidden" id="screenForgot">
+    <h2>Recuperar Senha</h2>
+    <input id="forgotUser" placeholder="Usuário">
+    <input id="forgotPhrase" placeholder="Frase de recuperação">
+    <input id="forgotNewPass" type="password" placeholder="Nova senha">
+    <input id="forgotNewPassConfirm" type="password" placeholder="Confirmar nova senha">
+    <div class="meter"><i id="forgotMeter"></i></div>
+    <button onclick="handleForgot()">Redefinir senha</button>
+    <button class="ghost" onclick="showLogin()">Voltar</button>
+    <p id="forgotMsg" class="note"></p>
+</div>
+
+<!-- PAINEL DO SISTEMA -->
+<div id="screenApp" class="hidden">
+    <div class="box">
+        <h2>Agendar Sala</h2>
+        <form id="formSchedule">
+            <label>Sala</label>
+            <select id="sala"><option value="">-- selecione --</option><option>Sala 1</option><option>Sala 2</option><option>Sala 3</option><option>Sala 4</option><option>Sala 5</option></select>
+            <label>Responsável</label>
+            <input id="resp" placeholder="Nome do responsável">
+            <label>Data</label>
+            <input id="date" type="date">
+            <label>Hora</label>
+            <input id="time" type="time">
+            <label>Descrição</label>
+            <input id="desc" placeholder="Assunto da reunião">
+            <button type="submit">Agendar</button>
+        </form>
+        <p id="schMsg" class="note"></p>
+    </div>
+
+    <div class="box">
+        <h2>Agendamentos</h2>
+        <table><thead><tr><th>Sala</th><th>Responsável</th><th>Data</th><th>Hora</th><th>Descrição</th><th>Ações</th></tr></thead>
+        <tbody id="tableSchedules"></tbody></table>
+    </div>
+
+    <div class="box">
+        <div class="row">
+            <button id="btnManageUsers" class="ghost" style="width:48%;" onclick="showUserMgmt()">Gerenciar Usuários</button>
+            <button class="danger" style="width:48%;" onclick="doLogout()">Sair</button>
+        </div>
+        <p id="appMsg" class="note"></p>
+    </div>
+
+    <!-- GERENCIAMENTO DE USUÁRIOS (CRUD) - visível para admins somente -->
+    <div id="userMgmt" class="hidden">
+        <div class="box">
+            <h2>Gerenciar Usuários (Admin)</h2>
+            <div style="display:flex; gap:8px;">
+                <input id="mgUserFilter" placeholder="Filtrar usuário">
+                <button onclick="renderUsers()">Filtrar</button>
+            </div>
+            <table><thead><tr><th>Usuário</th><th>Role</th><th>Ações</th></tr></thead>
+            <tbody id="tableUsers"></tbody></table>
+            <button class="ghost" onclick="hideUserMgmt()">Fechar</button>
+        </div>
+    </div>
+
+</div>
+
+<script>
+/***********************
+ * UTILIDADES DE HASH
+ ***********************/
+async function hashText(text) {
+    const enc = new TextEncoder();
+    const data = enc.encode(text);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+function saveToLocal(key, obj) { localStorage.setItem(key, JSON.stringify(obj)); }
+function loadFromLocal(key, fallback) { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); }
+
+/***********************
+ * DADOS INICIAIS
+ ***********************/
+let users = loadFromLocal('users', { 'admin': { hash: '', role: 'admin', recoveryHash: '' } });
+let schedules = loadFromLocal('schedules', []);
+let currentUser = null;
+
+(async function ensureAdmin() {
+    // se admin não tiver senha, cria senha padrão 'Admin@123' hashed (só na primeira vez)
+    if (users['admin'] && !users['admin'].hash) {
+        users['admin'].hash = await hashText('Admin@123');
+        users['admin'].recoveryHash = await hashText('admin-recover');
+        users['admin'].role = 'admin';
+        saveToLocal('users', users);
+    }
+})();
+
+/***********************
+ * NAVEGAÇÃO ENTRE TELAS
+ ***********************/
+function showLogin(){ document.getElementById('screenLogin').classList.remove('hidden'); document.getElementById('screenRegister').classList.add('hidden'); document.getElementById('screenForgot').classList.add('hidden'); }
+function showRegister(){ document.getElementById('screenLogin').classList.add('hidden'); document.getElementById('screenRegister').classList.remove('hidden'); document.getElementById('screenForgot').classList.add('hidden'); }
+function showForgot(){ document.getElementById('screenLogin').classList.add('hidden'); document.getElementById('screenRegister').classList.add('hidden'); document.getElementById('screenForgot').classList.remove('hidden'); }
+function showApp(){ document.getElementById('screenLogin').classList.add('hidden'); document.getElementById('screenRegister').classList.add('hidden'); document.getElementById('screenForgot').classList.add('hidden'); document.getElementById('screenApp').classList.remove('hidden'); }
+
+/***********************
+ * VALIDAÇÃO FORTE DE SENHA
+ ***********************/
+function evaluatePasswordStrength(pw) {
+    const rules = [/.{8,}/, /[A-Z]/, /[a-z]/, /[0-9]/, /[^A-Za-z0-9]/];
+    let passed = rules.reduce((acc, rx) => acc + (rx.test(pw) ? 1 : 0), 0);
+    return {score: passed, satisfied: passed === rules.length, passedRules: passed};
+}
+
+document.getElementById('regPass').addEventListener('input', async (e) => {
+    const v = e.target.value;
+    updateMeter('pwMeter', evaluatePasswordStrength(v).score);
+});
+
+document.getElementById('forgotNewPass').addEventListener('input', (e)=>{
+    updateMeter('forgotMeter', evaluatePasswordStrength(e.target.value).score);
+});
+
+function updateMeter(id, score) {
+    const pct = Math.round((score/5)*100);
+    const el = document.getElementById(id);
+    el.style.width = pct + '%';
+}
+
+/***********************
+ * LOGIN / REGISTER / FORGOT
+ ***********************/
+async function handleRegister(isAdminCreated) {
+    const user = document.getElementById('regUser').value.trim();
+    const pass = document.getElementById('regPass').value;
+    const passc = document.getElementById('regPassConfirm').value;
+    const recovery = document.getElementById('regRecovery').value.trim();
+    const msg = document.getElementById('regMsg');
+    msg.textContent = '';
+
+    if (!user || !pass || !passc || !recovery) { msg.textContent = 'Preencha todos os campos.'; return; }
+    if (pass !== passc) { msg.textContent = 'As senhas não conferem.'; return; }
+
+    const pwEval = evaluatePasswordStrength(pass);
+    if (!pwEval.satisfied) { msg.textContent = 'Senha fraca. Siga as regras.'; return; }
+
+    if (users[user]) { msg.textContent = 'Usuário já existe.'; return; }
+
+    const hash = await hashText(pass);
+    const recHash = await hashText(recovery.toLowerCase());
+    users[user] = { hash, role: isAdminCreated ? 'admin' : 'user', recoveryHash: recHash };
+    saveToLocal('users', users);
+    msg.textContent = 'Usuário criado com sucesso.';
+    // limpar campos
+    document.getElementById('regUser').value=''; document.getElementById('regPass').value=''; document.getElementById('regPassConfirm').value=''; document.getElementById('regRecovery').value='';
+    setTimeout(showLogin, 900);
+}
+
+async function handleLogin(){
+    const user = document.getElementById('loginUser').value.trim();
+    const pass = document.getElementById('loginPass').value;
+    const msg = document.getElementById('loginMsg'); msg.textContent='';
+    if (!user || !pass) { msg.textContent='Preencha usuário e senha.'; return; }
+    if (!users[user]) { msg.textContent='Usuário inexistente.'; return; }
+    const hash = await hashText(pass);
+    if (hash !== users[user].hash) { msg.textContent='Usuário ou senha inválidos.'; return; }
+    // sucesso
+    currentUser = { name: user, role: users[user].role };
+    msg.textContent = 'Bem-vindo ' + user + ' ('+users[user].role+')';
+    showApp(); renderSchedules();
+}
+
+async function handleForgot(){
+    const user = document.getElementById('forgotUser').value.trim();
+    const phrase = document.getElementById('forgotPhrase').value.trim();
+    const newPass = document.getElementById('forgotNewPass').value;
+    const newPassC = document.getElementById('forgotNewPassConfirm').value;
+    const msg = document.getElementById('forgotMsg'); msg.textContent='';
+
+    if (!user || !phrase || !newPass || !newPassC) { msg.textContent='Preencha todos os campos.'; return; }
+    if (!users[user]) { msg.textContent='Usuário inexistente.'; return; }
+    if (newPass !== newPassC) { msg.textContent='As senhas não conferem.'; return; }
+    const evalPw = evaluatePasswordStrength(newPass);
+    if (!evalPw.satisfied) { msg.textContent = 'Senha fraca.'; return; }
+    const recHash = await hashText(phrase.toLowerCase());
+    if (recHash !== users[user].recoveryHash) { msg.textContent = 'Frase de recuperação incorreta.'; return; }
+    users[user].hash = await hashText(newPass);
+    saveToLocal('users', users);
+    msg.textContent = 'Senha redefinida com sucesso.';
+    setTimeout(showLogin, 900);
+}
+
+/***********************
+ * AGENDAMENTOS (com conflito, localstorage)
+ ***********************/
+function renderSchedules(){
+    const tbody = document.getElementById('tableSchedules'); tbody.innerHTML='';
+    schedules = loadFromLocal('schedules', schedules);
+    schedules.forEach((s,i)=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${s.sala}</td><td>${escapeHtml(s.resp)}</td><td>${s.date}</td><td>${s.time}</td><td>${escapeHtml(s.desc)}</td>
+            <td class="flex">
+                <button onclick="editSchedule(${i})">Editar</button>
+                <button class="danger" onclick="deleteSchedule(${i})">Excluir</button>
+            </td>`;
+        tbody.appendChild(tr);
+    });
+}
+
+document.getElementById('formSchedule').addEventListener('submit', function(e){
+    e.preventDefault();
+    const sala = document.getElementById('sala').value;
+    const resp = document.getElementById('resp').value.trim();
+    const date = document.getElementById('date').value;
+    const time = document.getElementById('time').value;
+    const desc = document.getElementById('desc').value.trim();
+    const msg = document.getElementById('schMsg'); msg.textContent='';
+    if (!sala || !resp || !date || !time) { msg.textContent='Preencha campos obrigatórios.'; return; }
+    const conflict = schedules.some(s => s.sala===sala && s.date===date && s.time===time);
+    if (conflict) { msg.textContent='Conflito: sala ocupada neste horário.'; return; }
+    schedules.push({ sala, resp, date, time, desc }); saveToLocal('schedules', schedules); renderSchedules(); this.reset(); msg.textContent='Agendamento salvo.';
+});
+
+function editSchedule(i){
+    const s = schedules[i];
+    document.getElementById('sala').value = s.sala;
+    document.getElementById('resp').value = s.resp;
+    document.getElementById('date').value = s.date;
+    document.getElementById('time').value = s.time;
+    document.getElementById('desc').value = s.desc;
+    // remove original
+    schedules.splice(i,1); saveToLocal('schedules', schedules); renderSchedules();
+}
+function deleteSchedule(i){ if (!confirm('Excluir agendamento?')) return; schedules.splice(i,1); saveToLocal('schedules', schedules); renderSchedules(); }
+
+/***********************
+ * GESTÃO DE USUÁRIOS (CRUD) - apenas admin
+ ***********************/
+function showUserMgmt(){ if (!currentUser || currentUser.role!=='admin') { alert('Acesso negado: apenas administradores.'); return; } document.getElementById('userMgmt').classList.remove('hidden'); renderUsers(); }
+function hideUserMgmt(){ document.getElementById('userMgmt').classList.add('hidden'); }
+
+async function renderUsers(){
+    const tbody = document.getElementById('tableUsers'); tbody.innerHTML='';
+    const filter = document.getElementById('mgUserFilter').value.trim().toLowerCase();
+    users = loadFromLocal('users', users);
+    Object.keys(users).filter(u => u.toLowerCase().includes(filter)).forEach(u=>{
+        const r = users[u].role;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${u}</td><td>${r}</td><td class="flex">
+            <button onclick="changeRole('${u}','admin')">Tornar admin</button>
+            <button onclick="changeRole('${u}','user')">Tornar user</button>
+            <button onclick="promptReset('${u}')">Reset senha</button>
+            <button class="danger" onclick="deleteUser('${u}')">Excluir</button>
+        </td>`;
+        tbody.appendChild(tr);
+    });
+}
+
+async function changeRole(username, role){ if (!confirm('Alterar role de '+username+' para '+role+'?')) return; users[username].role=role; saveToLocal('users', users); renderUsers(); }
+
+async function promptReset(username){ const np = prompt('Digite nova senha temporária para '+username+': (mín 8)'); if (!np) return; const evalp = evaluatePasswordStrength(np); if (!evalp.satisfied) { alert('Senha fraca.'); return; } users[username].hash = await hashText(np); saveToLocal('users', users); alert('Senha redefinida.'); }
+
+function deleteUser(username){ if (username==='admin') { alert('Não é possível excluir admin padrão.'); return; } if (!confirm('Excluir usuário '+username+'?')) return; delete users[username]; saveToLocal('users', users); renderUsers(); }
+
+/***********************
+ * LOGOUT / HELPERS
+ ***********************/
+function doLogout(){ currentUser=null; document.getElementById('screenApp').classList.add('hidden'); document.getElementById('screenLogin').classList.remove('hidden'); document.getElementById('appMsg').textContent='Você saiu.'; }
+
+function escapeHtml(str){ if (!str) return ''; return str.replace(/[&<>"']/g, function(tag){ const chars = { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;" }; return chars[tag] || tag; }); }
+
+// init: show login
+showLogin(); renderSchedules();
+
+</script>
+
+</body>
+</html>
